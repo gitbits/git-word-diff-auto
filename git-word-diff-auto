@@ -28,23 +28,68 @@
 # SUCH DAMAGE.
 #
 
-if [ $# -eq 0 ]; then
+usage () {
     cat <<EOF >&2
-usage: $0 git-subcommand args..
+usage: $0 <git-subcommand> <args>..
+
+`basename $0` runs a given subcommand with a --word-diff option
+enabling colorization if stdout is a tty.  It can be used to build an
+alias.
 
 e.g.
     git config --global alias.wdi 'word-diff-auto diff'
     git config --global alias.wdc 'word-diff-auto diff --cached'
+
+The following configuration variables are recognized.
+
+    color.wordDiff.old
+        The color used for highlighting removed words.
+        (default: "red reverse")
+
+    color.wordDiff.new
+        The color used for highlighting added words.
+        (default: "green reverse")
 EOF
-    exit 1
-fi
+}
 
-command="$1"; shift
+main () {
+    local opt OPTIND=1
 
-if git config --get-colorbool color.diff; then
-    mode=color
-else
-    mode=plain
-fi
+    while getopts '' opt; do
+        :
+    done
 
-exec git "$command" --word-diff="$mode" "$@"
+    shift $(($OPTIND - 1))
+
+    if [ $# -eq 0 ]; then
+        usage
+        exit 1
+    fi
+
+    local command="$1" slot color; shift
+
+    if git config --get-colorbool color.diff; then
+        set -- "$command" --word-diff=color "$@"
+        for slot in old new; do
+            eval "color=\`word_color $slot\`"
+            set -- -c color.diff.$slot="$color" "$@"
+        done
+    else
+        set -- "$command" --word-diff "$@"
+    fi
+
+    exec git "$@"
+}
+
+word_color () {
+    local slot="$1" color
+    case "$slot" in
+        old) default="red reverse" ;;
+        new) default="green reverse" ;;
+        *)   return ;;
+    esac
+    color="$(git config --get diff.wordDiff.$slot)"
+    echo "${color:-$default}"
+}
+
+main "$@"
